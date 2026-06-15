@@ -57,10 +57,15 @@ COPY backstage/patches/App.tsx          ./packages/app/src/App.tsx
 
 # Generate TS type definitions, then build the backend bundle
 RUN yarn tsc 2>&1 | tail -5
-RUN yarn build:backend --config app-config.production.yaml 2>&1 | tail -20
 
-# Verify outputs and show exactly what was produced
-RUN echo "=== packages/backend/dist ===" && ls -lah packages/backend/dist/
+# Full output — no tail, so we see every line including real errors
+RUN yarn build:backend --config app-config.production.yaml 2>&1; echo "BUILD_EXIT:$?"
+
+# Broad search: find everything produced, regardless of where it landed
+RUN echo "=== all dist dirs ===" && find . -name "dist" -not -path "*/node_modules/*" | sort && \
+    echo "=== all tarballs ===" && find . -name "*.tar.gz" -not -path "*/node_modules/*" | sort && \
+    echo "=== packages/backend full tree ===" && find packages/backend -not -path "*/node_modules/*" | sort && \
+    echo "=== root ls ===" && ls -la
 
 # ── Stage 3: lean runtime ─────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runtime
