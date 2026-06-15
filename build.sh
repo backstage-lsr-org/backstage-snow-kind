@@ -74,8 +74,15 @@ else
   YARN_CMD="yarn"
 fi
 info "${YARN_CMD} install (this takes ~5 min on first run)..."
-${YARN_CMD} install --immutable 2>&1 | tail -5
-success "Deps installed"
+# Try immutable install first for reproducibility; fall back to normal install if
+# the scaffolded project requires lockfile updates (YN0028).
+if ${YARN_CMD} install --immutable 2>&1 | tail -5; then
+  success "Deps installed (immutable)"
+else
+  info "Immutable install failed — retrying without --immutable to update lockfile..."
+  ${YARN_CMD} install 2>&1 | tail -5
+  success "Deps installed (lockfile updated)"
+fi
 
 # ── Step 3: ServiceNow plugin ────────────────────────────────────────────────
 header "Plugin"
