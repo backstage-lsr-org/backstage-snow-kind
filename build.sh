@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  build.sh — scaffolds Backstage on the host, patches it, builds the image
+#  build.sh — the ONLY way to build the backstage-snow-poc image
+#
+#  What it does:
+#    1. Scaffolds Backstage into .backstage-app/ (once)
+#    2. yarn install + adds SNow plugin
+#    3. Patches our customisations
+#    4. yarn tsc && yarn build:backend  (produces skeleton + bundle tarballs)
+#    5. Writes a Dockerfile into .backstage-app/ and runs docker build from there
+#    6. Optionally pushes to DockerHub
 #
 #  Usage:
-#    ./build.sh                          # build locally, tag backstage-snow-poc:latest
-#    ./build.sh --push yourname/bs-poc  # also push to DockerHub
+#    ./build.sh                              # local image: backstage-snow-poc:latest
+#    ./build.sh --push yourname/bs-poc       # build + push
+#    ./build.sh --tag yourname/bs-poc:v1     # custom tag, no push
+#    ./build.sh --clean                      # delete .backstage-app/ and re-scaffold
 # =============================================================================
 set -euo pipefail
 
@@ -12,154 +22,182 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${SCRIPT_DIR}/.backstage-app"
 IMAGE_TAG="backstage-snow-poc:latest"
 PUSH=false
-PUSH_TAG=""
+CLEAN=false
 
-# ── Args ──────────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --push) PUSH=true; PUSH_TAG="$2"; IMAGE_TAG="$2"; shift 2 ;;
-    --tag)  IMAGE_TAG="$2"; shift 2 ;;
-    *) echo "Unknown: $1"; exit 1 ;;
+    --push)  PUSH=true; IMAGE_TAG="$2"; shift 2 ;;
+    --tag)   IMAGE_TAG="$2"; shift 2 ;;
+    --clean) CLEAN=true; shift ;;
+    *) echo "Unknown flag: $1"; exit 1 ;;
   esac
 done
 
-info()    { echo -e "\033[0;36m[INFO]\033[0m $*"; }
-success() { echo -e "\033[0;32m[✓]\033[0m $*"; }
-error()   { echo -e "\033[0;31m[ERROR]\033[0m $*"; exit 1; }
+C='\033[0;36m'; G='\033[0;32m'; R='\033[0;31m'; B='\033[1m'; N='\033[0m'
+info()    { echo -e "${C}[INFO]${N} $*"; }
+success() { echo -e "${G}[✓]${N} $*"; }
+error()   { echo -e "${R}[ERROR]${N} $*"; exit 1; }
+header()  { echo -e "\n${B}${C}══ $* ══${N}"; }
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-command -v node  >/dev/null || error "node not found"
-command -v yarn  >/dev/null || error "yarn not found"
+header "Preflight"
+command -v node   >/dev/null || error "node not found — install Node.js 20+"
+command -v yarn   >/dev/null || error "yarn not found — run: npm install -g yarn"
 command -v docker >/dev/null || error "docker not found"
+info "node $(node --version) | yarn $(yarn --version) | docker $(docker --version | cut -d' ' -f3)"
 
-info "Node: $(node --version)  Yarn: $(yarn --version)"
+if $CLEAN && [[ -d "$APP_DIR" ]]; then
+  info "Cleaning $APP_DIR..."
+  rm -rf "$APP_DIR"
+fi
 
 # ── Step 1: Scaffold ─────────────────────────────────────────────────────────
+header "Scaffold"
 if [[ -d "$APP_DIR" ]]; then
-  info "Existing scaffold found at $APP_DIR — skipping create-app"
+  info "Found existing scaffold at $APP_DIR (use --clean to recreate)"
 else
-  info "Scaffolding Backstage app..."
-  mkdir -p "$(dirname "$APP_DIR")"
-  cd "$(dirname "$APP_DIR")"
+  info "Running @backstage/create-app (this takes ~2 min)..."
+  cd "$SCRIPT_DIR"
   echo "backstage-snow-poc" | npx --yes @backstage/create-app@latest --skip-install 2>&1 | tail -5
   mv backstage-snow-poc "$APP_DIR"
-  success "Scaffold created at $APP_DIR"
+  success "Scaffolded → $APP_DIR"
 fi
 
 cd "$APP_DIR"
 
-# ── Step 2: Install deps ──────────────────────────────────────────────────────
-info "Installing dependencies..."
+# ── Step 2: Install ───────────────────────────────────────────────────────────
+header "Install"
+info "yarn install (this takes ~5 min on first run)..."
 yarn install --immutable 2>&1 | tail -5
 success "Deps installed"
 
-# ── Step 3: Add ServiceNow plugin ────────────────────────────────────────────
-info "Adding Roadie ServiceNow plugin..."
+# ── Step 3: ServiceNow plugin ────────────────────────────────────────────────
+header "Plugin"
+info "Adding @roadiehq/backstage-plugin-servicenow..."
 yarn --cwd packages/app add @roadiehq/backstage-plugin-servicenow 2>&1 | tail -3
 success "Plugin added"
 
-# ── Step 4: Patch our files in ───────────────────────────────────────────────
-info "Patching custom files..."
-cp "${SCRIPT_DIR}/backstage/app-config.yaml"          ./app-config.production.yaml
-cp -r "${SCRIPT_DIR}/backstage/catalog/"              ./catalog/
-cp "${SCRIPT_DIR}/backstage/patches/EntityPage.tsx"   ./packages/app/src/components/catalog/EntityPage.tsx
-cp "${SCRIPT_DIR}/backstage/patches/App.tsx"          ./packages/app/src/App.tsx
-success "Files patched"
+# ── Step 4: Patch files ───────────────────────────────────────────────────────
+header "Patch"
+cp    "${SCRIPT_DIR}/backstage/app-config.yaml"          ./app-config.production.yaml
+cp -r "${SCRIPT_DIR}/backstage/catalog/"                 ./catalog/
+cp    "${SCRIPT_DIR}/backstage/patches/EntityPage.tsx"   ./packages/app/src/components/catalog/EntityPage.tsx
+cp    "${SCRIPT_DIR}/backstage/patches/App.tsx"          ./packages/app/src/App.tsx
+success "Customisations patched in"
 
 # ── Step 5: Build ─────────────────────────────────────────────────────────────
-info "Running yarn tsc..."
+header "Build"
+info "yarn tsc..."
 yarn tsc 2>&1 | tail -3
 
-info "Running yarn build:backend..."
+info "yarn build:backend..."
 yarn build:backend --config app-config.production.yaml 2>&1 | tail -10
 
-# Verify tarballs exist
-ls packages/backend/dist/skeleton.tar.gz >/dev/null || error "skeleton.tar.gz not found!"
-ls packages/backend/dist/bundle.tar.gz   >/dev/null || error "bundle.tar.gz not found!"
-success "Build complete: $(ls -lh packages/backend/dist/*.tar.gz | awk '{print $5, $9}')"
+# Hard-fail if tarballs not produced
+[[ -f packages/backend/dist/skeleton.tar.gz ]] || error "skeleton.tar.gz not produced — build failed"
+[[ -f packages/backend/dist/bundle.tar.gz   ]] || error "bundle.tar.gz not produced — build failed"
+success "Backend bundle ready: $(du -sh packages/backend/dist/*.tar.gz | awk '{printf "%s %s  ", $1, $2}')"
 
-# ── Step 6: Copy mock into app dir so it's in docker build context ────────────
-info "Copying ServiceNow mock..."
-cp -r "${SCRIPT_DIR}/mock"          ./mock
-cp    "${SCRIPT_DIR}/entrypoint.sh" ./entrypoint.sh
+# ── Step 6: Copy assets into the build context ───────────────────────────────
+header "Assets"
+info "Copying mock + entrypoint into build context..."
+cp -r "${SCRIPT_DIR}/mock"           ./mock
+cp    "${SCRIPT_DIR}/entrypoint.sh"  ./entrypoint.sh
 chmod +x ./entrypoint.sh
+success "Assets copied"
 
-# ── Step 7: Docker build using the scaffolded Dockerfile ─────────────────────
-info "Building Docker image: ${IMAGE_TAG}"
+# ── Step 7: Write Dockerfile into .backstage-app/ ────────────────────────────
+header "Dockerfile"
+cat > ./Dockerfile.snow << 'DOCKERFILE'
+# Generated by build.sh — do not edit directly
 
-# Wrap the scaffolded packages/backend/Dockerfile to also include our mock
-cat > /tmp/backstage-snow-Dockerfile << 'INNEREOF'
-# ── Re-use the official scaffolded Dockerfile, then add mock on top ───────────
-
-# Stage A: build mock
+# Stage 1: ServiceNow mock
 FROM node:20-alpine AS mock-build
 WORKDIR /mock
 COPY mock/package.json .
 RUN npm install --omit=dev
 COPY mock/server.js .
 
-# Stage B: official Backstage backend image (uses host-built dist/)
+# Stage 2: Backstage backend (dist was built on the host)
 FROM node:20-bookworm-slim AS backstage
-
 ENV PYTHON=/usr/bin/python3
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--no-node-snapshot"
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 g++ build-essential libsqlite3-dev && \
+    apt-get install -y --no-install-recommends \
+      python3 g++ build-essential libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 USER node
 WORKDIR /app
 
-COPY --chown=node:node .yarn          ./.yarn
-COPY --chown=node:node .yarnrc.yml    ./
+# Yarn workspace config (needed for workspaces focus)
+COPY --chown=node:node .yarn       ./.yarn
+COPY --chown=node:node .yarnrc.yml ./
 COPY --chown=node:node backstage.json ./
 
+# skeleton restores packages/*/package.json tree, then we install prod deps only
 COPY --chown=node:node yarn.lock package.json packages/backend/dist/skeleton.tar.gz ./
 RUN tar xzf skeleton.tar.gz && rm skeleton.tar.gz
-
 RUN yarn workspaces focus --all --production 2>&1 | tail -5
 
-COPY --chown=node:node catalog/                         ./catalog/
-COPY --chown=node:node packages/backend/dist/bundle.tar.gz \
-                        app-config.production.yaml      ./
+# Catalog is read at runtime from disk
+COPY --chown=node:node catalog/ ./catalog/
+
+# bundle.tar.gz = compiled backend + embedded static frontend
+COPY --chown=node:node packages/backend/dist/bundle.tar.gz app-config.production.yaml ./
 RUN tar xzf bundle.tar.gz && rm bundle.tar.gz && \
     mv app-config.production.yaml app-config.yaml
 
-# ── Stage C: final image with both services ───────────────────────────────────
+# Stage 3: final — Backstage + mock in one image
 FROM backstage AS final
-
-# Add mock (runs as root to copy, then switch back)
 USER root
 WORKDIR /mock
 COPY --from=mock-build /mock ./
-COPY --chown=node:node entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-
 USER node
 WORKDIR /app
-
 EXPOSE 7007 8181
-
 ENTRYPOINT ["/entrypoint.sh"]
-INNEREOF
+DOCKERFILE
 
-docker build \
-  -f /tmp/backstage-snow-Dockerfile \
-  -t "${IMAGE_TAG}" \
+success "Dockerfile.snow written"
+
+# ── Step 8: Write .dockerignore for this build ────────────────────────────────
+cat > ./.dockerignore.snow << 'IGNORE'
+.git
+.yarn/cache
+.yarn/install-state.gz
+packages/*/src
+packages/*/node_modules
+node_modules
+plugins
+*.local.yaml
+IGNORE
+
+# ── Step 9: Docker build ──────────────────────────────────────────────────────
+header "Docker build"
+info "Building image: ${IMAGE_TAG}"
+DOCKER_BUILDKIT=1 docker build \
+  -f Dockerfile.snow \
+  --tag "${IMAGE_TAG}" \
   .
-
 success "Image built: ${IMAGE_TAG}"
 
-# ── Step 8: Optionally push ───────────────────────────────────────────────────
+# ── Step 10: Push ─────────────────────────────────────────────────────────────
 if $PUSH; then
-  info "Pushing ${PUSH_TAG}..."
-  docker push "${PUSH_TAG}"
-  success "Pushed!"
+  header "Push"
+  docker push "${IMAGE_TAG}"
+  success "Pushed: ${IMAGE_TAG}"
 fi
 
 echo ""
-echo "  Test locally:  docker run --rm -p 7007:7007 -p 8181:8181 ${IMAGE_TAG}"
-echo "  Backstage:     http://localhost:7007"
-echo "  SNow mock:     http://localhost:8181/health"
+echo -e "${G}${B}════════════════════════════════════════════${N}"
+echo -e "  Image: ${B}${IMAGE_TAG}${N}"
+echo ""
+echo -e "  Quick test:"
+echo -e "    docker run --rm -p 7007:7007 -p 8181:8181 ${IMAGE_TAG}"
+echo -e "  Then open: http://localhost:7007"
+echo -e "${G}${B}════════════════════════════════════════════${N}"
