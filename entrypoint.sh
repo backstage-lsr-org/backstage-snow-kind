@@ -1,11 +1,25 @@
 #!/bin/sh
-# entrypoint.sh — starts both the ServiceNow mock and Backstage, restarts either if they crash
+# entrypoint.sh — zero-dependency supervisor for the SNow mock + Backstage.
+# Auto-detects the Backstage entry point (index.js vs index.cjs.js).
 
 set -e
 
 log() { echo "[$(date -Iseconds)] [supervisor] $*"; }
 
-# ── Start ServiceNow mock ─────────────────────────────────────────────────────
+# ── Detect entry point ───────────────────────────────────────────────────────
+DIST=/app/packages/backend/dist
+if [ -f "$DIST/index.cjs.js" ]; then
+  ENTRY="$DIST/index.cjs.js"
+elif [ -f "$DIST/index.js" ]; then
+  ENTRY="$DIST/index.js"
+else
+  log "ERROR: no entry point found in $DIST"
+  ls -la "$DIST" || true
+  exit 1
+fi
+log "Backstage entry point: $ENTRY"
+
+# ── Process start functions ──────────────────────────────────────────────────
 start_mock() {
   log "Starting ServiceNow mock on :8181"
   MOCK_PORT=8181 node /mock/server.js &
@@ -13,43 +27,38 @@ start_mock() {
   log "Mock PID=$MOCK_PID"
 }
 
-# ── Start Backstage ────────────────────────────────────────────────────────────
 start_backstage() {
   log "Starting Backstage on :7007"
   cd /app
-  NODE_ENV=production node dist/index.cjs.js --config app-config.yaml &
+  NODE_ENV=production node "$ENTRY" --config app-config.yaml &
   BS_PID=$!
   log "Backstage PID=$BS_PID"
 }
 
-# ── Graceful shutdown on SIGTERM/SIGINT ───────────────────────────────────────
+# ── Graceful shutdown ────────────────────────────────────────────────────────
 shutdown() {
-  log "Shutting down..."
+  log "Shutdown signal received"
   kill "$MOCK_PID" "$BS_PID" 2>/dev/null || true
   wait
-  log "All processes stopped."
+  log "Stopped."
   exit 0
 }
 trap shutdown TERM INT
 
-# ── Initial start ─────────────────────────────────────────────────────────────
+# ── Start both ───────────────────────────────────────────────────────────────
 start_mock
-# Small delay so mock is ready before Backstage tries to call it on startup
 sleep 2
 start_backstage
 
-# ── Watch loop: restart crashed processes ─────────────────────────────────────
-log "Supervisor running. Both services started."
+log "Both services running. Supervisor watching..."
 while true; do
-  sleep 5
-
+  sleep 10
   if ! kill -0 "$MOCK_PID" 2>/dev/null; then
-    log "WARN: Mock crashed (PID=$MOCK_PID) — restarting"
+    log "WARN: Mock crashed — restarting"
     start_mock
   fi
-
   if ! kill -0 "$BS_PID" 2>/dev/null; then
-    log "WARN: Backstage crashed (PID=$BS_PID) — restarting"
+    log "WARN: Backstage crashed — restarting"
     start_backstage
   fi
 done
