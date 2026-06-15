@@ -1,0 +1,134 @@
+---
+# ── Systems ───────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: payments-platform
+  title: Payments Platform
+  description: Core payment processing infrastructure
+spec:
+  owner: group:payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-infra
+  title: Platform Infrastructure
+spec:
+  owner: group:platform
+---
+# ── Components ────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payment-gateway
+  title: Payment Gateway
+  description: Handles all payment processing flows including 3DS, refunds, and reconciliation.
+  annotations:
+    servicenow.com/ci-sys-id: svc001
+    backstage.io/techdocs-ref: dir:.
+  tags: [payments, tier-1, critical]
+  links:
+    - url: http://localhost:8181/api/now/table/cmdb_ci_service/svc001
+      title: ServiceNow CI (mock)
+      icon: dashboard
+spec:
+  type: service
+  lifecycle: production
+  owner: group:payments
+  system: payments-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: user-auth-service
+  title: User Auth Service
+  description: OAuth2 / OIDC / SAML SSO identity provider.
+  annotations:
+    servicenow.com/ci-sys-id: svc002
+  tags: [platform, tier-1, security]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:platform
+  system: platform-infra
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: notification-engine
+  title: Notification Engine
+  description: Email, SMS, and push notifications with template management.
+  annotations:
+    servicenow.com/ci-sys-id: svc003
+  tags: [messaging, tier-2]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:messaging
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: reporting-service
+  title: Reporting Service
+  description: Business intelligence and reporting dashboards.
+  annotations:
+    servicenow.com/ci-sys-id: svc004
+  tags: [analytics, tier-2]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:analytics
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: api-gateway
+  title: API Gateway
+  description: Edge API gateway, rate limiting, and routing.
+  annotations:
+    servicenow.com/ci-sys-id: svc005
+  tags: [platform, tier-1]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:platform
+  system: platform-infra
+---
+# ── Groups ────────────────────────────────────────────────────────────────────
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: payments
+  title: Payments Team
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform
+  title: Platform Team
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: messaging
+  title: Messaging Team
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: analytics
+  title: Analytics Team
+spec:
+  type: team
+  children: []

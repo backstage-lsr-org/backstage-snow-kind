@@ -1,0 +1,57 @@
+app:
+  title: Backstage × ServiceNow POC
+  baseUrl: ${APP_BASE_URL:-http://localhost:7007}
+
+organization:
+  name: POC Org
+
+backend:
+  baseUrl: ${BACKEND_BASE_URL:-http://localhost:7007}
+  listen:
+    port: 7007
+    host: 0.0.0.0
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  cors:
+    origin: ${APP_BASE_URL:-http://localhost:7007}
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+
+  # Use SQLite when no Postgres is configured (great for single-container mode)
+  database:
+    client: ${DB_CLIENT:-better-sqlite3}
+    connection: ${DB_CONNECTION:-':memory:'}
+    # To use Postgres, set:
+    # DB_CLIENT=pg
+    # DB_CONNECTION={"host":"...","port":5432,"user":"...","password":"...","database":"backstage"}
+
+  cache:
+    store: memory
+
+proxy:
+  endpoints:
+    /servicenow/api:
+      target: ${SERVICENOW_BASE_URL:-http://localhost:8181}/api
+      headers:
+        Authorization: Basic ${SERVICENOW_AUTH_B64:-YWRtaW46YWRtaW4=}  # admin:admin
+
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+  rules:
+    - allow: [Component, System, API, Resource, Location, Group, User]
+  locations:
+    - type: file
+      target: /app/catalog/all.yaml
+
+auth:
+  providers:
+    guest: {}
+
+# ── ServiceNow connection ──────────────────────────────────────────────────────
+# Defaults point at the bundled mock (localhost:8181).
+# Override SERVICENOW_BASE_URL + credentials to use a real instance.
+servicenow:
+  baseUrl: ${SERVICENOW_BASE_URL:-http://localhost:8181}
+  username: ${SERVICENOW_USERNAME:-admin}
+  password: ${SERVICENOW_PASSWORD:-admin}

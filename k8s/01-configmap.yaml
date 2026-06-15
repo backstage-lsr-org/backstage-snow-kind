@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-snow-config
+  namespace: backstage-snow
+data:
+  # ── App URLs ────────────────────────────────────────────────────────────────
+  APP_BASE_URL: "http://localhost:7007"
+  BACKEND_BASE_URL: "http://localhost:7007"
+
+  # ── ServiceNow connection ────────────────────────────────────────────────────
+  # Default: uses the bundled mock (no real SNow needed)
+  SERVICENOW_BASE_URL: "http://localhost:8181"
+  SERVICENOW_USERNAME: "admin"
+
+  # ── Database ─────────────────────────────────────────────────────────────────
+  # Default: in-memory SQLite (data resets on pod restart, fine for POC)
+  DB_CLIENT: "better-sqlite3"
+  DB_CONNECTION: ":memory:"
+
+  # ── To switch to a real ServiceNow instance ──────────────────────────────────
+  # 1. Edit SERVICENOW_BASE_URL to your instance URL
+  # 2. Update SERVICENOW_USERNAME
+  # 3. Add password in the Secret below
+  # SERVICENOW_BASE_URL: "https://your-instance.service-now.com"
+  # SERVICENOW_USERNAME: "your-api-user"
