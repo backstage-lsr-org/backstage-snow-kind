@@ -67,12 +67,8 @@ check docker
 # ── Optionally build & push the image ─────────────────────────────────────────
 if $BUILD; then
   header "Building Docker image: ${IMAGE}"
-  docker build -t "${IMAGE}" "${SCRIPT_DIR}"
-  success "Image built"
-
-  info "Pushing to DockerHub..."
-  docker push "${IMAGE}"
-  success "Image pushed → ${IMAGE}"
+  # Delegates to build.sh which handles scaffold + yarn build + docker build + push
+  "${SCRIPT_DIR}/build.sh" --push "${IMAGE}"
 fi
 
 # ── Create kind cluster ───────────────────────────────────────────────────────
