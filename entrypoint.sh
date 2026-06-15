@@ -1,9 +1,7 @@
 #!/bin/sh
-# entrypoint.sh — zero-dependency supervisor: runs SNow mock + Backstage
-# Entry point per official docs: node packages/backend
+# Supervisor: starts ServiceNow mock + Backstage, restarts either on crash.
 
 set -e
-
 log() { echo "[$(date -Iseconds)] [supervisor] $*"; }
 
 start_mock() {
@@ -16,17 +14,16 @@ start_mock() {
 start_backstage() {
   log "Starting Backstage on :7007"
   cd /app
-  # Official Backstage entry point: node packages/backend
+  # Official entry point per Backstage docs
   node packages/backend --config app-config.yaml &
   BS_PID=$!
   log "Backstage PID=$BS_PID"
 }
 
 shutdown() {
-  log "Shutdown signal — stopping all processes"
+  log "Shutdown signal received — stopping all processes"
   kill "$MOCK_PID" "$BS_PID" 2>/dev/null || true
   wait
-  log "Stopped."
   exit 0
 }
 trap shutdown TERM INT
@@ -35,7 +32,7 @@ start_mock
 sleep 2
 start_backstage
 
-log "Both services started. Supervisor watching..."
+log "Both services running. Watching for crashes..."
 while true; do
   sleep 10
   if ! kill -0 "$MOCK_PID" 2>/dev/null; then
