@@ -46,6 +46,26 @@ command -v yarn   >/dev/null || error "yarn not found — run: npm install -g ya
 command -v docker >/dev/null || error "docker not found"
 info "node $(node --version) | yarn $(yarn --version) | docker $(docker --version | cut -d' ' -f3)"
 
+# ── Node version guard ───────────────────────────────────────────────────────
+# Some native dependencies (isolated-vm, tree-sitter) require Node 18-compatible
+# V8 headers. If your environment uses Node >=20, the native addons may fail to
+# compile. Set SKIP_NODE_CHECK=1 to bypass this guard if you know what you're
+# doing.
+if [ "${SKIP_NODE_CHECK:-}" != "1" ]; then
+  NODE_MAJOR=$(node --version | sed 's/^v//' | cut -d. -f1)
+  if [ "${NODE_MAJOR}" -ne 18 ]; then
+    echo ""
+    echo "[ERROR] Unsupported Node.js version detected: $(node --version)"
+    echo "This build expects Node.js 18.x to compile native addons (isolated-vm, tree-sitter)."
+    echo "Please switch to Node 18 and re-run the script. Examples:"
+    echo "  nvm install 18 && nvm use 18"
+    echo "  or: asdf install nodejs 18.20.2 && asdf global nodejs 18.20.2"
+    echo "  or enable Corepack and install Yarn 4 if you prefer: https://yarnpkg.com/getting-started/install"
+    echo "If you understand the risks and want to proceed anyway, set SKIP_NODE_CHECK=1 to bypass this check."
+    exit 1
+  fi
+fi
+
 if $CLEAN && [[ -d "$APP_DIR" ]]; then
   info "Cleaning $APP_DIR..."
   rm -rf "$APP_DIR"
