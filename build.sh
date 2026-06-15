@@ -67,14 +67,20 @@ cd "$APP_DIR"
 
 # ── Step 2: Install ───────────────────────────────────────────────────────────
 header "Install"
-info "yarn install (this takes ~5 min on first run)..."
-yarn install --immutable 2>&1 | tail -5
+# Prefer the project-local Yarn (Berry) if present to avoid global Yarn v1/v2 mismatches.
+if ls .yarn/releases/*.cjs >/dev/null 2>&1; then
+  YARN_CMD="node .yarn/releases/$(ls .yarn/releases/*.cjs | head -n1 | xargs -n1 basename)"
+else
+  YARN_CMD="yarn"
+fi
+info "${YARN_CMD} install (this takes ~5 min on first run)..."
+${YARN_CMD} install --immutable 2>&1 | tail -5
 success "Deps installed"
 
 # ── Step 3: ServiceNow plugin ────────────────────────────────────────────────
 header "Plugin"
 info "Adding @roadiehq/backstage-plugin-servicenow..."
-yarn --cwd packages/app add @roadiehq/backstage-plugin-servicenow 2>&1 | tail -3
+${YARN_CMD} --cwd packages/app add @roadiehq/backstage-plugin-servicenow 2>&1 | tail -3
 success "Plugin added"
 
 # ── Step 4: Patch files ───────────────────────────────────────────────────────
@@ -88,10 +94,10 @@ success "Customisations patched in"
 # ── Step 5: Build ─────────────────────────────────────────────────────────────
 header "Build"
 info "yarn tsc..."
-yarn tsc 2>&1 | tail -3
+${YARN_CMD} tsc 2>&1 | tail -3
 
 info "yarn build:backend..."
-yarn build:backend --config app-config.production.yaml 2>&1 | tail -10
+${YARN_CMD} build:backend --config app-config.production.yaml 2>&1 | tail -10
 
 # Hard-fail if tarballs not produced
 [[ -f packages/backend/dist/skeleton.tar.gz ]] || error "skeleton.tar.gz not produced — build failed"
