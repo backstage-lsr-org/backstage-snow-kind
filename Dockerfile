@@ -57,13 +57,13 @@ COPY backstage/patches/App.tsx          ./packages/app/src/App.tsx
 # Step 1: generate TypeScript type definitions (required before backend build)
 RUN yarn tsc 2>&1 | tail -10
 
-# Step 2: build backend — produces:
-#   packages/backend/dist/skeleton.tar.gz   (package.json tree, for yarn install)
-#   packages/backend/dist/bundle.tar.gz     (compiled backend + embedded frontend)
-RUN yarn build:backend --config app-config.production.yaml 2>&1 | tail -20
+# Step 2: build backend — show FULL output so we can see errors
+RUN yarn build:backend --config app-config.production.yaml 2>&1
 
-# Verify the expected tarballs are there
-RUN ls -lh packages/backend/dist/skeleton.tar.gz packages/backend/dist/bundle.tar.gz
+# Debug: show everything produced so we know exact paths
+RUN echo "=== packages/backend/ ===" && find packages/backend -not -path '*/node_modules/*' | sort && \
+    echo "=== dist/ (if exists) ===" && (ls -lah packages/backend/dist/ 2>/dev/null || echo "NO DIST FOLDER") && \
+    echo "=== root dist-types/ (if exists) ===" && (ls -lah dist-types/ 2>/dev/null || echo "NO DIST-TYPES")
 
 # ── Stage 3: lean runtime ─────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runtime
